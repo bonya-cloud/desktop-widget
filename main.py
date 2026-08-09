@@ -1,4 +1,5 @@
 import sys
+import os
 import psutil
 import ctypes
 from datetime import datetime
@@ -40,10 +41,9 @@ class DesktopOverlay(QWidget):
         super().__init__()
 
         self.is_locked = False
-        self.is_dark_theme = True  # Текущая тема
+        self.is_dark_theme = True
         self.old_pos = None
 
-        # Определение стилей для тем
         self.themes = {
             "dark": {
                 "container": "background-color: rgba(15, 15, 20, 0.88); border: 1px solid rgba(0, 255, 204, 0.35); border-radius: 8px;",
@@ -59,12 +59,11 @@ class DesktopOverlay(QWidget):
             }
         }
 
-        # Настройка сигналов
         self.signals = HotkeySignals()
         self.signals.toggle_visible.connect(self.toggle_visibility)
         self.signals.toggle_lock.connect(self.toggle_click_lock)
         self.signals.toggle_theme.connect(self.toggle_theme)
-        self.signals.quit_app.connect(self.close)
+        self.signals.quit_app.connect(self.force_quit)
 
         self.update_window_flags()
         self.setAttribute(Qt.WA_TranslucentBackground)
@@ -72,10 +71,10 @@ class DesktopOverlay(QWidget):
 
         ctypes.windll.user32.SetWindowPos(int(self.winId()), -1, 0, 0, 0, 0, 0x0001 | 0x0002)
 
-        # Хоткеи
+        # Регистрация глобальных хоткеев
         keyboard.add_hotkey('ctrl+shift+h', lambda: self.signals.toggle_visible.emit())
         keyboard.add_hotkey('ctrl+shift+l', lambda: self.signals.toggle_lock.emit())
-        keyboard.add_hotkey('ctrl+shift+t', lambda: self.signals.toggle_theme.emit())  # Смена темы
+        keyboard.add_hotkey('ctrl+shift+t', lambda: self.signals.toggle_theme.emit())
         keyboard.add_hotkey('ctrl+shift+q', lambda: self.signals.quit_app.emit())
 
         self.timer = QTimer(self)
@@ -177,14 +176,14 @@ class DesktopOverlay(QWidget):
         else:
             self.fps_label.setText("FPS N/A")
 
+        # Безопасное получение загрузки GPU без создания фоновых процессов консоли
         try:
-            import GPUtil
-            gpus = GPUtil.getGPUs()
-            if gpus:
-                gpu_load = int(gpus[0].load * 100)
-                self.gpu_label.setText(f"GPU {gpu_load}%")
-            else:
-                self.gpu_label.setText("GPU N/A")
+            import pynvml
+            pynvml.nvmlInit()
+            handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+            util = pynvml.nvmlDeviceGetUtilizationRates(handle)
+            self.gpu_label.setText(f"GPU {util.gpu}%")
+            pynvml.nvmlShutdown()
         except Exception:
             self.gpu_label.setText("GPU N/A")
 
@@ -209,6 +208,12 @@ class DesktopOverlay(QWidget):
         
         self.update_window_flags()
 
+    def force_quit(self):
+        # Жесткое и мгновенное завершение процесса без зависаний
+        keyboard.unhook_all()
+        QApplication.quit()
+        os._exit(0)
+
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton and not self.is_locked:
             self.old_pos = event.globalPos()
@@ -225,7 +230,7 @@ class DesktopOverlay(QWidget):
 
     def contextMenuEvent(self, event):
         if not self.is_locked:
-            self.close()
+            self.force_quit()
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
