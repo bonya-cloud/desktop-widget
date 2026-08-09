@@ -4,6 +4,41 @@ from datetime import datetime
 from PyQt5.QtCore import Qt, QTimer, QPoint
 from PyQt5.QtWidgets import QApplication, QWidget, QLabel, QVBoxLayout
 from PyQt5.QtGui import QFont
+import ctypes
+from ctypes import wintypes
+
+# Чтение FPS напрямую из RivaTuner Statistics Server
+class RTSSSharedMemory(ctypes.Structure):
+    _fields_ = [
+        ("dwSignature", wintypes.DWORD),
+        ("dwVersion", wintypes.DWORD),
+        ("dwAppNum", wintypes.DWORD),
+        ("dwAppTotal", wintypes.DWORD),
+    ]
+
+def get_rtss_fps():
+    try:
+        FILE_MAP_READ = 0x0004
+        handle = ctypes.windll.kernel32.OpenFileMappingW(FILE_MAP_READ, False, "RTSSSharedMemoryV2")
+        if not handle:
+            return None
+        buf = ctypes.windll.kernel32.MapViewOfFile(handle, FILE_MAP_READ, 0, 0, 0)
+        if not buf:
+            ctypes.windll.kernel32.CloseHandle(handle)
+            return None
+        
+        # Читаем количество кадров первого активного приложения
+        # Смещение до массива записей приложений
+        app_entry_offset = 256 # Базовый офсет для записи приложения в RTSS
+        fps_offset = app_entry_offset + 12 # Офсет instantaneous_frames
+        
+        fps = ctypes.cast(buf + fps_offset, ctypes.POINTER(ctypes.c_uint32)).contents.value
+        
+        ctypes.windll.kernel32.UnmapViewOfFile(buf)
+        ctypes.windll.kernel32.CloseHandle(handle)
+        return fps
+    except Exception:
+        return None
 
 class DesktopOverlay(QWidget):
     def __init__(self):
@@ -98,16 +133,11 @@ class DesktopOverlay(QWidget):
         self.cpu_label.setText(f"CPU: {cpu_usage}%")
         self.ram_label.setText(f"RAM: {ram_usage}%")
 
-        # Обновление FPS из RivaTuner (RTSS)
-        try:
-            from pyrtss import RTSS
-            rtss = RTSS()
-            if rtss.app_entries:
-                fps = int(rtss.app_entries[0].instantaneous_frames)
-                self.fps_label.setText(f"FPS: {fps}")
-            else:
-                self.fps_label.setText("FPS: N/A")
-        except Exception:
+        # Обновление FPS из RivaTuner
+        fps = get_rtss_fps()
+        if fps is not None and fps > 0:
+            self.fps_label.setText(f"FPS: {fps}")
+        else:
             self.fps_label.setText("FPS: N/A")
 
         # Обновление GPU (загрузка видеокарты)
