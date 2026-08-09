@@ -9,21 +9,24 @@ class DesktopOverlay(QWidget):
     def __init__(self):
         super().__init__()
 
-        # Флаги окна: поверх всех окон, без рамок и без иконки на панели задач
+        # Флаги окна: поверх всех, без рамок, без иконки и со сквозными кликами
         self.setWindowFlags(
             Qt.WindowStaysOnTopHint |
             Qt.FramelessWindowHint |
-            Qt.Tool
+            Qt.Tool |
+            Qt.WindowTransparentForInput  # Клики проходят сквозь виджет прямо в игру
         )
         
         # Прозрачный фон
         self.setAttribute(Qt.WA_TranslucentBackground)
-        
-        # Переменная для перетаскивания окна
         self.old_pos = None
 
         self.init_ui()
         
+        # Принудительный системный приоритет TOPMOST в Windows
+        import ctypes
+        ctypes.windll.user32.SetWindowPos(int(self.winId()), -1, 0, 0, 0, 0, 0x0001 | 0x0002)
+
         # Обновление данных каждую секунду
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_stats)
@@ -61,7 +64,7 @@ class DesktopOverlay(QWidget):
         self.fps_label.setFont(font_stats)
         self.fps_label.setStyleSheet("color: #ffffff;")
 
-        # Добавление всех элементов в интерфейс
+        # Добавление всех элементов в layout
         layout.addWidget(self.time_label)
         layout.addWidget(self.cpu_label)
         layout.addWidget(self.ram_label)
@@ -137,10 +140,6 @@ class DesktopOverlay(QWidget):
     # Закрытие окна ПКМ
     def contextMenuEvent(self, event):
         self.close()
-    # закрытие окна по esc
-    def keyPressEvent(self, event):
-        if event.key() == Qt.Key_Escape:
-            self.close()    
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
