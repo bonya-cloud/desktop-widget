@@ -44,12 +44,12 @@ class DesktopOverlay(QWidget):
     def __init__(self):
         super().__init__()
 
-        # Флаги окна: поверх всех, без рамок, без иконки и со сквозными кликами
+        # Флаги окна: поверх всех, без рамок и без иконки
         self.setWindowFlags(
             Qt.WindowStaysOnTopHint |
             Qt.FramelessWindowHint |
-            Qt.Tool |
-            Qt.WindowTransparentForInput  # Клики проходят сквозь виджет прямо в игру
+            Qt.Tool
+            # Строку Qt.WindowTransparentForInput мы убрали!
         )
         
         # Прозрачный фон
