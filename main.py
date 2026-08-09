@@ -67,7 +67,7 @@ class DesktopOverlay(QWidget):
         layout.addWidget(self.time_label)
         layout.addWidget(self.cpu_label)
         layout.addWidget(self.ram_label)
-        layout.addWidget(self.fps_label)
+        layout.addWidget(self.gpu_label)
 
         self.setLayout(layout)
 
@@ -96,6 +96,18 @@ class DesktopOverlay(QWidget):
         self.cpu_label.setText(f"CPU: {cpu_usage}%")
         self.ram_label.setText(f"RAM: {ram_usage}%")
 
+        # FPS из RivaTuner (RTSS)
+        try:
+            from pyrtss import RTSS
+            rtss = RTSS()
+            if rtss.app_entries:
+                fps = int(rtss.app_entries[0].instantaneous_frames)
+                self.fps_label.setText(f"FPS: {fps}")
+            else:
+                self.fps_label.setText("FPS: N/A")
+        except Exception:
+            self.fps_label.setText("FPS: N/A")
+
         # GPU
         try:
             import GPUtil
@@ -107,7 +119,6 @@ class DesktopOverlay(QWidget):
                 self.gpu_label.setText("GPU: N/A")
         except Exception:
             self.gpu_label.setText("GPU: N/A")
-
         # GPU
         try:
             import GPUtil
