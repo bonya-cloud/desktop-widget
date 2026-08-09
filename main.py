@@ -3,6 +3,7 @@ import psutil
 from PyQt5.QtCore import Qt, QTimer, QPoint
 from PyQt5.QtWidgets import QApplication, QWidget, QLabel, QVBoxLayout
 from PyQt5.QtGui import QFont
+from datetime import datetime
 
 class DesktopOverlay(QWidget):
     def __init__(self):
@@ -51,12 +52,17 @@ class DesktopOverlay(QWidget):
         self.ram_label.setFont(font_stats)
         self.ram_label.setStyleSheet("color: #ffffff;")
 
-        # ФПС
+# Статистика GPU
+        self.gpu_label = QLabel("GPU: 0%", self)
+        self.gpu_label.setFont(font_stats)
+        self.gpu_label.setStyleSheet("color: #ffffff;")
 
-        self.fps_label = QLabel("FPS: 0", self)
-        self.fps_label.setFont(font_stats)
-        self.fps_label.setStyleSheet("color: #ffffff;")
-        
+        layout.addWidget(self.time_label)
+        layout.addWidget(self.cpu_label)
+        layout.addWidget(self.ram_label)
+        layout.addWidget(self.gpu_label)
+
+        self.setLayout(layout)
 
         layout.addWidget(self.time_label)
         layout.addWidget(self.cpu_label)
@@ -79,17 +85,40 @@ class DesktopOverlay(QWidget):
         self.update_stats()
 
     def update_stats(self):
-        # Обновление времени
-        from datetime import datetime
+        # Время
         now = datetime.now().strftime("%H:%M:%S")
         self.time_label.setText(now)
 
-        # Обновление процессора и ОЗУ
+        # CPU и RAM
         cpu_usage = psutil.cpu_percent()
         ram_usage = psutil.virtual_memory().percent
 
         self.cpu_label.setText(f"CPU: {cpu_usage}%")
         self.ram_label.setText(f"RAM: {ram_usage}%")
+
+        # GPU
+        try:
+            import GPUtil
+            gpus = GPUtil.getGPUs()
+            if gpus:
+                gpu_load = int(gpus[0].load * 100)
+                self.gpu_label.setText(f"GPU: {gpu_load}%")
+            else:
+                self.gpu_label.setText("GPU: N/A")
+        except Exception:
+            self.gpu_label.setText("GPU: N/A")
+
+        # GPU
+        try:
+            import GPUtil
+            gpus = GPUtil.getGPUs()
+            if gpus:
+                gpu_load = int(gpus[0].load * 100)
+                self.gpu_label.setText(f"GPU: {gpu_load}%")
+            else:
+                self.gpu_label.setText("GPU: N/A")
+        except Exception:
+            self.gpu_label.setText("GPU: N/A")
 
     # --- Логика перетаскивания мышкой ---
     def mousePressEvent(self, event):
