@@ -70,7 +70,7 @@ class DesktopOverlay(QWidget):
             QWidget {
                 background-color: rgba(20, 20, 30, 0.85);
                 border: 1px solid rgba(0, 255, 204, 0.3);
-                border-radius: 19px;
+                border-radius: 16px;
             }
         """)
 
