@@ -8,13 +8,12 @@ from PyQt5.QtCore import Qt, QTimer, QPoint, pyqtSignal, QObject
 from PyQt5.QtWidgets import QApplication, QWidget, QLabel, QHBoxLayout
 from PyQt5.QtGui import QFont
 
-# Сигналы для безопасного вызова функций Qt из потока горячих клавиш
 class HotkeySignals(QObject):
     toggle_visible = pyqtSignal()
     toggle_lock = pyqtSignal()
+    toggle_theme = pyqtSignal()
     quit_app = pyqtSignal()
 
-# Чтение FPS напрямую из RivaTuner Statistics Server
 def get_rtss_fps():
     try:
         FILE_MAP_READ = 0x0004
@@ -41,27 +40,44 @@ class DesktopOverlay(QWidget):
         super().__init__()
 
         self.is_locked = False
+        self.is_dark_theme = True  # Текущая тема
         self.old_pos = None
 
-        # Настройка сигналов горячих клавиш
+        # Определение стилей для тем
+        self.themes = {
+            "dark": {
+                "container": "background-color: rgba(15, 15, 20, 0.88); border: 1px solid rgba(0, 255, 204, 0.35); border-radius: 8px;",
+                "text": "color: #ffffff;",
+                "accent": "color: #00ffcc;",
+                "sep": "color: #555555;"
+            },
+            "light": {
+                "container": "background-color: rgba(240, 240, 245, 0.90); border: 1px solid rgba(0, 100, 200, 0.4); border-radius: 8px;",
+                "text": "color: #1a1a1a;",
+                "accent": "color: #0055ff;",
+                "sep": "color: #aaaaaa;"
+            }
+        }
+
+        # Настройка сигналов
         self.signals = HotkeySignals()
         self.signals.toggle_visible.connect(self.toggle_visibility)
         self.signals.toggle_lock.connect(self.toggle_click_lock)
+        self.signals.toggle_theme.connect(self.toggle_theme)
         self.signals.quit_app.connect(self.close)
 
         self.update_window_flags()
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.init_ui()
 
-        # Принудительный системный приоритет TOPMOST
         ctypes.windll.user32.SetWindowPos(int(self.winId()), -1, 0, 0, 0, 0, 0x0001 | 0x0002)
 
         # Хоткеи
         keyboard.add_hotkey('ctrl+shift+h', lambda: self.signals.toggle_visible.emit())
         keyboard.add_hotkey('ctrl+shift+l', lambda: self.signals.toggle_lock.emit())
+        keyboard.add_hotkey('ctrl+shift+t', lambda: self.signals.toggle_theme.emit())  # Смена темы
         keyboard.add_hotkey('ctrl+shift+q', lambda: self.signals.quit_app.emit())
 
-        # Обновление данных каждую секунду
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_stats)
         self.timer.start(1000)
@@ -75,99 +91,92 @@ class DesktopOverlay(QWidget):
         self.show()
 
     def init_ui(self):
-        # Используем горизонтальный Layout вместо вертикального
         layout = QHBoxLayout()
         layout.setContentsMargins(12, 6, 12, 6)
         layout.setSpacing(10)
 
         font_stats = QFont("Consolas", 10, QFont.Bold)
-        style_text = "color: #ffffff;"
-        style_sep = "color: #555555; font-weight: bold;"
 
-        # Часы
         self.time_label = QLabel("00:00:00", self)
         self.time_label.setFont(font_stats)
-        self.time_label.setStyleSheet("color: #00ffcc;")
 
-        # CPU
         self.cpu_label = QLabel("CPU: 0%", self)
         self.cpu_label.setFont(font_stats)
-        self.cpu_label.setStyleSheet(style_text)
 
-        # RAM
         self.ram_label = QLabel("RAM: 0%", self)
         self.ram_label.setFont(font_stats)
-        self.ram_label.setStyleSheet(style_text)
 
-        # GPU
         self.gpu_label = QLabel("GPU: N/A", self)
         self.gpu_label.setFont(font_stats)
-        self.gpu_label.setStyleSheet(style_text)
 
-        # FPS
         self.fps_label = QLabel("FPS: N/A", self)
         self.fps_label.setFont(font_stats)
-        self.fps_label.setStyleSheet(style_text)
 
-        # Статус кликов
         self.status_label = QLabel("[КЛИКИ]", self)
         self.status_label.setFont(font_stats)
-        self.status_label.setStyleSheet("color: #00ffcc;")
 
-        # Собираем горизонтальную строку с разделителями "|"
+        self.separators = []
+        for _ in range(5):
+            sep = QLabel("|", self)
+            sep.setFont(font_stats)
+            self.separators.append(sep)
+
         layout.addWidget(self.time_label)
-        layout.addWidget(self.create_sep(style_sep))
+        layout.addWidget(self.separators[0])
         layout.addWidget(self.cpu_label)
-        layout.addWidget(self.create_sep(style_sep))
+        layout.addWidget(self.separators[1])
         layout.addWidget(self.ram_label)
-        layout.addWidget(self.create_sep(style_sep))
+        layout.addWidget(self.separators[2])
         layout.addWidget(self.gpu_label)
-        layout.addWidget(self.create_sep(style_sep))
+        layout.addWidget(self.separators[3])
         layout.addWidget(self.fps_label)
-        layout.addWidget(self.create_sep(style_sep))
+        layout.addWidget(self.separators[4])
         layout.addWidget(self.status_label)
 
         self.setLayout(layout)
-
-        # Стилизация узкой полосы
-        self.setStyleSheet("""
-            QWidget {
-                background-color: rgba(15, 15, 20, 0.88);
-                border: 1px solid rgba(0, 255, 204, 0.35);
-                border-radius: 8px;
-            }
-        """)
-
+        self.apply_theme()
         self.setWindowTitle("Desktop Widget Bar")
-        self.adjustSize()  # Автоматический подгон ширины под текст
+        self.adjustSize()
         self.update_stats()
 
-    def create_sep(self, style):
-        sep = QLabel("|", self)
-        sep.setFont(QFont("Consolas", 10))
-        sep.setStyleSheet(style)
-        return sep
+    def apply_theme(self):
+        theme_key = "dark" if self.is_dark_theme else "light"
+        theme = self.themes[theme_key]
+
+        self.setStyleSheet(f"QWidget {{ {theme['container']} }}")
+        
+        self.time_label.setStyleSheet(theme['accent'])
+        self.cpu_label.setStyleSheet(theme['text'])
+        self.ram_label.setStyleSheet(theme['text'])
+        self.gpu_label.setStyleSheet(theme['text'])
+        self.fps_label.setStyleSheet(theme['text'])
+
+        for sep in self.separators:
+            sep.setStyleSheet(theme['sep'])
+
+        if not self.is_locked:
+            self.status_label.setStyleSheet(theme['accent'])
+
+    def toggle_theme(self):
+        self.is_dark_theme = not self.is_dark_theme
+        self.apply_theme()
 
     def update_stats(self):
-        # Время
         now = datetime.now().strftime("%H:%M:%S")
         self.time_label.setText(now)
 
-        # CPU и RAM
         cpu_usage = psutil.cpu_percent()
         ram_usage = psutil.virtual_memory().percent
 
         self.cpu_label.setText(f"CPU {cpu_usage}%")
         self.ram_label.setText(f"RAM {ram_usage}%")
 
-        # FPS
         fps = get_rtss_fps()
         if fps is not None and fps > 0:
             self.fps_label.setText(f"FPS {fps}")
         else:
             self.fps_label.setText("FPS N/A")
 
-        # GPU
         try:
             import GPUtil
             gpus = GPUtil.getGPUs()
@@ -189,16 +198,17 @@ class DesktopOverlay(QWidget):
 
     def toggle_click_lock(self):
         self.is_locked = not self.is_locked
+        theme_key = "dark" if self.is_dark_theme else "light"
+        
         if self.is_locked:
             self.status_label.setText("[БЛОК]")
             self.status_label.setStyleSheet("color: #ff5555;")
         else:
             self.status_label.setText("[КЛИКИ]")
-            self.status_label.setStyleSheet("color: #00ffcc;")
+            self.status_label.setStyleSheet(self.themes[theme_key]['accent'])
         
         self.update_window_flags()
 
-    # Перетаскивание
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton and not self.is_locked:
             self.old_pos = event.globalPos()
