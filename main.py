@@ -1,10 +1,9 @@
 import sys
-import importlib
 import psutil
+from datetime import datetime
 from PyQt5.QtCore import Qt, QTimer, QPoint
 from PyQt5.QtWidgets import QApplication, QWidget, QLabel, QVBoxLayout
 from PyQt5.QtGui import QFont
-from datetime import datetime
 
 class DesktopOverlay(QWidget):
     def __init__(self):
@@ -17,15 +16,15 @@ class DesktopOverlay(QWidget):
             Qt.Tool
         )
         
-        # Делаем прозрачный фон окна
+        # Прозрачный фон
         self.setAttribute(Qt.WA_TranslucentBackground)
         
-        # Переменная для перетаскивания окна мышкой
+        # Переменная для перетаскивания окна
         self.old_pos = None
 
         self.init_ui()
         
-        # Таймер для обновления данных каждую секунду (1000 мс)
+        # Обновление данных каждую секунду
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_stats)
         self.timer.start(1000)
@@ -34,70 +33,69 @@ class DesktopOverlay(QWidget):
         layout = QVBoxLayout()
         layout.setContentsMargins(15, 15, 15, 15)
 
-        # Кастомный шрифт
         font_title = QFont("Consolas", 14, QFont.Bold)
         font_stats = QFont("Consolas", 11)
 
-        # Часы
+        # 1. Часы
         self.time_label = QLabel("00:00:00", self)
         self.time_label.setFont(font_title)
-        self.time_label.setStyleSheet("color: #00ffcc;") # Неоново-бирюзовый цвет
+        self.time_label.setStyleSheet("color: #00ffcc;")
 
-        # Статистика CPU
+        # 2. CPU
         self.cpu_label = QLabel("CPU: 0%", self)
         self.cpu_label.setFont(font_stats)
         self.cpu_label.setStyleSheet("color: #ffffff;")
 
-        # Статистика RAM
+        # 3. RAM
         self.ram_label = QLabel("RAM: 0%", self)
         self.ram_label.setFont(font_stats)
         self.ram_label.setStyleSheet("color: #ffffff;")
 
-# Статистика GPU
-        self.gpu_label = QLabel("GPU: 0%", self)
+        # 4. GPU
+        self.gpu_label = QLabel("GPU: N/A", self)
         self.gpu_label.setFont(font_stats)
         self.gpu_label.setStyleSheet("color: #ffffff;")
 
+        # 5. FPS
+        self.fps_label = QLabel("FPS: N/A", self)
+        self.fps_label.setFont(font_stats)
+        self.fps_label.setStyleSheet("color: #ffffff;")
+
+        # Добавление всех элементов в интерфейс
         layout.addWidget(self.time_label)
         layout.addWidget(self.cpu_label)
         layout.addWidget(self.ram_label)
         layout.addWidget(self.gpu_label)
+        layout.addWidget(self.fps_label)
 
         self.setLayout(layout)
 
-        layout.addWidget(self.time_label)
-        layout.addWidget(self.cpu_label)
-        layout.addWidget(self.ram_label)
-        layout.addWidget(self.gpu_label)
-
-        self.setLayout(layout)
-
-        # Стилизация самого плавающего блока (тёмная полупрозрачная карточка с закруглёнными углами)
+        # Тёмный полупрозрачный стиль блока
         self.setStyleSheet("""
             QWidget {
                 background-color: rgba(20, 20, 30, 0.85);
                 border: 1px solid rgba(0, 255, 204, 0.3);
-                border-radius: 16px;
+                border-radius: 12px;
             }
         """)
 
         self.setWindowTitle("Desktop Widget")
-        self.resize(180, 100)
+        self.resize(180, 140)
         self.update_stats()
 
     def update_stats(self):
-        # Время
+        # Обновление времени
         now = datetime.now().strftime("%H:%M:%S")
         self.time_label.setText(now)
 
-        # CPU и RAM
+        # Обновление CPU и RAM
         cpu_usage = psutil.cpu_percent()
         ram_usage = psutil.virtual_memory().percent
 
         self.cpu_label.setText(f"CPU: {cpu_usage}%")
         self.ram_label.setText(f"RAM: {ram_usage}%")
 
-        # FPS из RivaTuner (RTSS)
+        # Обновление FPS из RivaTuner (RTSS)
         try:
             from pyrtss import RTSS
             rtss = RTSS()
@@ -109,18 +107,7 @@ class DesktopOverlay(QWidget):
         except Exception:
             self.fps_label.setText("FPS: N/A")
 
-        # GPU
-        try:
-            import GPUtil
-            gpus = GPUtil.getGPUs()
-            if gpus:
-                gpu_load = int(gpus[0].load * 100)
-                self.gpu_label.setText(f"GPU: {gpu_load}%")
-            else:
-                self.gpu_label.setText("GPU: N/A")
-        except Exception:
-            self.gpu_label.setText("GPU: N/A")
-        # GPU
+        # Обновление GPU (загрузка видеокарты)
         try:
             import GPUtil
             gpus = GPUtil.getGPUs()
@@ -132,7 +119,7 @@ class DesktopOverlay(QWidget):
         except Exception:
             self.gpu_label.setText("GPU: N/A")
 
-    # --- Логика перетаскивания мышкой ---
+    # Перетаскивание окна ЛКМ
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
             self.old_pos = event.globalPos()
@@ -147,9 +134,13 @@ class DesktopOverlay(QWidget):
         if event.button() == Qt.LeftButton:
             self.old_pos = None
 
-    # Закрытие виджета по нажатию правой кнопкой мыши
+    # Закрытие окна ПКМ
     def contextMenuEvent(self, event):
         self.close()
+    # закрытие окна по esc
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Escape:
+            self.close()    
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
