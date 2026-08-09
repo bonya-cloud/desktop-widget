@@ -1,21 +1,21 @@
 import sys
 import psutil
-from datetime import datetime
-from PyQt5.QtCore import Qt, QTimer, QPoint
-from PyQt5.QtWidgets import QApplication, QWidget, QLabel, QVBoxLayout
-from PyQt5.QtGui import QFont
 import ctypes
 from ctypes import wintypes
+from datetime import datetime
+import keyboard
+
+from PyQt5.QtCore import Qt, QTimer, QPoint, pyqtSignal, QObject
+from PyQt5.QtWidgets import QApplication, QWidget, QLabel, QVBoxLayout
+from PyQt5.QtGui import QFont
+
+# Сигналы для безопасного вызова функций Qt из потока горячих клавиш
+class HotkeySignals(QObject):
+    toggle_visible = pyqtSignal()
+    toggle_lock = pyqtSignal()
+    quit_app = pyqtSignal()
 
 # Чтение FPS напрямую из RivaTuner Statistics Server
-class RTSSSharedMemory(ctypes.Structure):
-    _fields_ = [
-        ("dwSignature", wintypes.DWORD),
-        ("dwVersion", wintypes.DWORD),
-        ("dwAppNum", wintypes.DWORD),
-        ("dwAppTotal", wintypes.DWORD),
-    ]
-
 def get_rtss_fps():
     try:
         FILE_MAP_READ = 0x0004
@@ -27,11 +27,8 @@ def get_rtss_fps():
             ctypes.windll.kernel32.CloseHandle(handle)
             return None
         
-        # Читаем количество кадров первого активного приложения
-        # Смещение до массива записей приложений
-        app_entry_offset = 256 # Базовый офсет для записи приложения в RTSS
-        fps_offset = app_entry_offset + 12 # Офсет instantaneous_frames
-        
+        app_entry_offset = 256
+        fps_offset = app_entry_offset + 12
         fps = ctypes.cast(buf + fps_offset, ctypes.POINTER(ctypes.c_uint32)).contents.value
         
         ctypes.windll.kernel32.UnmapViewOfFile(buf)
@@ -44,28 +41,41 @@ class DesktopOverlay(QWidget):
     def __init__(self):
         super().__init__()
 
-        # Флаги окна: поверх всех, без рамок и без иконки
-        self.setWindowFlags(
-            Qt.WindowStaysOnTopHint |
-            Qt.FramelessWindowHint |
-            Qt.Tool
-            # Строку Qt.WindowTransparentForInput мы убрали!
-        )
-        
-        # Прозрачный фон
-        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.is_locked = False  # Состояние блокировки кликов
         self.old_pos = None
 
+        # Настройка сигналов горячих клавиш
+        self.signals = HotkeySignals()
+        self.signals.toggle_visible.connect(self.toggle_visibility)
+        self.signals.toggle_lock.connect(self.toggle_click_lock)
+        self.signals.quit_app.connect(self.close)
+
+        # Флаги окна
+        self.update_window_flags()
+
+        self.setAttribute(Qt.WA_TranslucentBackground)
         self.init_ui()
-        
-        # Принудительный системный приоритет TOPMOST в Windows
-        import ctypes
+
+        # Принудительный системный приоритет TOPMOST
         ctypes.windll.user32.SetWindowPos(int(self.winId()), -1, 0, 0, 0, 0, 0x0001 | 0x0002)
 
-        # Обновление данных каждую секунду
+        # Регистрируем глобальные хоткеи
+        keyboard.add_hotkey('ctrl+shift+h', lambda: self.signals.toggle_visible.emit())
+        keyboard.add_hotkey('ctrl+shift+l', lambda: self.signals.toggle_lock.emit())
+        keyboard.add_hotkey('ctrl+shift+q', lambda: self.signals.quit_app.emit())
+
+        # Обновление данных каждые 1000 мс
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_stats)
         self.timer.start(1000)
+
+    def update_window_flags(self):
+        flags = Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint | Qt.Tool
+        if self.is_locked:
+            flags |= Qt.WindowTransparentForInput  # Пропускать клики сквозь окно
+        
+        self.setWindowFlags(flags)
+        self.show()
 
     def init_ui(self):
         layout = QVBoxLayout()
@@ -99,16 +109,20 @@ class DesktopOverlay(QWidget):
         self.fps_label.setFont(font_stats)
         self.fps_label.setStyleSheet("color: #ffffff;")
 
-        # Добавление всех элементов в layout
+        # 6. Статус блокировки
+        self.status_label = QLabel("[  КЛИКИ: АКТИВНЫ  ]", self)
+        self.status_label.setFont(QFont("Consolas", 8, QFont.Bold))
+        self.status_label.setStyleSheet("color: #00ffcc; margin-top: 5px;")
+
         layout.addWidget(self.time_label)
         layout.addWidget(self.cpu_label)
         layout.addWidget(self.ram_label)
         layout.addWidget(self.gpu_label)
         layout.addWidget(self.fps_label)
+        layout.addWidget(self.status_label)
 
         self.setLayout(layout)
 
-        # Тёмный полупрозрачный стиль блока
         self.setStyleSheet("""
             QWidget {
                 background-color: rgba(20, 20, 30, 0.85);
@@ -118,29 +132,29 @@ class DesktopOverlay(QWidget):
         """)
 
         self.setWindowTitle("Desktop Widget")
-        self.resize(180, 140)
+        self.resize(180, 160)
         self.update_stats()
 
     def update_stats(self):
-        # Обновление времени
+        # Время
         now = datetime.now().strftime("%H:%M:%S")
         self.time_label.setText(now)
 
-        # Обновление CPU и RAM
+        # CPU и RAM
         cpu_usage = psutil.cpu_percent()
         ram_usage = psutil.virtual_memory().percent
 
         self.cpu_label.setText(f"CPU: {cpu_usage}%")
         self.ram_label.setText(f"RAM: {ram_usage}%")
 
-        # Обновление FPS из RivaTuner
+        # FPS
         fps = get_rtss_fps()
         if fps is not None and fps > 0:
             self.fps_label.setText(f"FPS: {fps}")
         else:
             self.fps_label.setText("FPS: N/A")
 
-        # Обновление GPU (загрузка видеокарты)
+        # GPU
         try:
             import GPUtil
             gpus = GPUtil.getGPUs()
@@ -152,13 +166,32 @@ class DesktopOverlay(QWidget):
         except Exception:
             self.gpu_label.setText("GPU: N/A")
 
-    # Перетаскивание окна ЛКМ
+    # Переключение видимости (Ctrl + Shift + H)
+    def toggle_visibility(self):
+        if self.isVisible():
+            self.hide()
+        else:
+            self.show()
+
+    # Переключение режим сквозных кликов (Ctrl + Shift + L)
+    def toggle_click_lock(self):
+        self.is_locked = not self.is_locked
+        if self.is_locked:
+            self.status_label.setText("[ КЛИКИ: БЛОК (ИГРА) ]")
+            self.status_label.setStyleSheet("color: #ff5555; margin-top: 5px;")
+        else:
+            self.status_label.setText("[  КЛИКИ: АКТИВНЫ  ]")
+            self.status_label.setStyleSheet("color: #00ffcc; margin-top: 5px;")
+        
+        self.update_window_flags()
+
+    # Перетаскивание окна мышью
     def mousePressEvent(self, event):
-        if event.button() == Qt.LeftButton:
+        if event.button() == Qt.LeftButton and not self.is_locked:
             self.old_pos = event.globalPos()
 
     def mouseMoveEvent(self, event):
-        if self.old_pos:
+        if self.old_pos and not self.is_locked:
             delta = QPoint(event.globalPos() - self.old_pos)
             self.move(self.x() + delta.x(), self.y() + delta.y())
             self.old_pos = event.globalPos()
@@ -167,9 +200,9 @@ class DesktopOverlay(QWidget):
         if event.button() == Qt.LeftButton:
             self.old_pos = None
 
-    # Закрытие окна ПКМ
     def contextMenuEvent(self, event):
-        self.close()
+        if not self.is_locked:
+            self.close()
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
